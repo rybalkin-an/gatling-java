@@ -7,10 +7,7 @@ import io.gatling.javaapi.http.HttpDsl;
 import io.gatling.javaapi.http.HttpProtocolBuilder;
 
 import java.time.Duration;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -30,10 +27,9 @@ public class UsersRequestSimulation extends Simulation {
 
     private Iterator<Map<String, Object>> feeder =
             Stream.generate((Supplier<Map<String, Object>>) ()
-                    -> Collections.singletonMap("name", UUID.randomUUID().toString())
-            ).iterator();
+                    -> Collections.singletonMap("name", UUID.randomUUID().toString())).iterator();
 
-    private ScenarioBuilder scn = CoreDsl.scenario("Load Test Creating users")
+    private ScenarioBuilder createUsers = CoreDsl.scenario("Load Test Creating users")
             .feed(feeder)
             .exec(http("create-user-request")
                     .post(pathUsers)
@@ -46,8 +42,30 @@ public class UsersRequestSimulation extends Simulation {
                     .check(jsonPath("$.createdAt").ofString().exists())
             );
 
+    private ScenarioBuilder getUser = CoreDsl.scenario("Load Test get user")
+            .feed(
+                    Stream.generate((Supplier<Map<String, Object>>) ()
+                    -> Collections.singletonMap("id", new Random().nextInt(20))).iterator()
+            )
+            .during(10).on(
+                    exec(http("get-user-request")
+                            .get(pathUsers + "/" )
+                            .header("Content-Type", "application/json")
+                            .check(status().is(200))
+                            .check(jsonPath("$.support.url").ofString().is("https://reqres.in/#support-heading"))
+                            .check(jsonPath("$.support.text").ofString().is("To keep ReqRes free, contributions towards server costs are appreciated!")))
+            );
+
     public UsersRequestSimulation() {
-        this.setUp(scn.injectOpen(constantUsersPerSec(REQUEST_PER_SECOND).during(Duration.ofSeconds(DURATION_MIN))))
-                .protocols(httpProtocol);
+        this.setUp(
+
+                createUsers.injectOpen(rampUsers(REQUEST_PER_SECOND)
+                .during(Duration.ofSeconds(DURATION_MIN))),
+
+                getUser.injectOpen(rampUsers(REQUEST_PER_SECOND)
+                .during(Duration.ofSeconds(DURATION_MIN))))
+
+                .protocols(httpProtocol)
+                .assertions(global().failedRequests().count().is(0L));
     }
 }
